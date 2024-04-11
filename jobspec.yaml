@@ -1,0 +1,51 @@
+image: $AGENT_IMAGE_NAME
+resources:
+  mem: 2
+  cpu: 2
+data:
+  - $WORKSPACE_DATA_ID:/home/toolkit
+isProcessAgent: true
+preemptable: false
+environmentVars:
+  - LD_PRELOAD=
+  - HOME=/home/toolkit
+  - PYTHONPATH=/app
+command:
+  - python
+  - /app/toolkit_agent/agent.py
+
+  # A unique name for the experiment
+  - --name=$JOB_NAME
+
+  # Number of nodes
+  - --num-nodes=$NUM_NODES
+
+  ## The worker job description
+  - --image=$TOOLKIT_IMAGE_NAME
+  - --infiniband
+
+  # Resource usage for the worker jobs.
+  - --cpu=8
+  - --mem=32
+  - --gpu=8
+
+  # Environment variables
+  # TODO: Remove when fixed
+  - --env=LD_PRELOAD=
+  - --env=HOME=/home/toolkit
+  # NCCL Initialization logs
+  - --env=NCCL_DEBUG=INFO
+  # Catch NCCL errors instead of hanging indefinitely.
+  - --env=NCCL_ASYNC_ERROR_HANDLING=1
+  # Useful debug variables
+  # - --env=CUDA_LAUNCH_BLOCKING=1
+  # - --env=NCCL_DEBUG_SUBSYS=ALL
+
+  # Mounted data, in UUID format (data names are not supported).
+  - --data=$WORKSPACE_DATA_ID:/home/toolkit
+
+  # Wrap the command in mpirun
+  - --mpirun
+
+  ## The training script
+  - --command=$COMMAND

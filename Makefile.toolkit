@@ -1,0 +1,55 @@
+###############################################################################
+# Configuration
+
+# You can adjust TOOLKIT_ACCOUNT_ID to point to another account, not the default one.
+TOOLKIT_ACCOUNT_ID ?= $(shell eai account get --no-header --fields fullName)
+TOOLKIT_REGISTRY ?= volatile-$(shell eai profile current registry)
+
+# Use a timestamp to generate a unique job name.
+BASE_JOB_NAME ?= $(basename $(notdir $(CONFIG)))
+JOB_NAME := $(BASE_JOB_NAME)_$(shell date +%Y_%m_%d_%H_%M_%S)
+
+# Use a new image tag every time to make sure the image isn't overwritten.
+# Use `-3months` tag suffix to extend volatile registry image lifetime to 3 months
+TOOLKIT_IMAGE_NAME ?= $(TOOLKIT_REGISTRY)/$(TOOLKIT_ACCOUNT_ID)/nccl_tests:$(JOB_NAME)-3months
+
+# Use the default agent image (built elsewhere) for the agent.
+AGENT_IMAGE_NAME = $(TOOLKIT_REGISTRY)/$(TOOLKIT_ACCOUNT_ID)/toolkit-agent:latest
+
+# Find all variables in the config, excluding comments. Sort to remove duplicates.
+CONFIG_NO_COMMENTS = $(shell cat $(CONFIG) | sed '/^[[:blank:]]*\#/d;s/\#.*//')
+CONFIG_VARS = $(sort $(shell envsubst -v '$(CONFIG_NO_COMMENTS)'))
+# Find missing variables.
+UNDEFINED = $(foreach var,$(CONFIG_VARS),$(if $(value $(var)),,$(var)))
+
+###############################################################################
+# Build and push
+
+.PHONY: build
+build:
+	EAI_PROFILE=default DOCKER_BUILDKIT=1 docker build --secret id=env,src=.env --progress plain -t $(TOOLKIT_IMAGE_NAME) .
+
+.PHONY: push
+push: build
+	docker push $(TOOLKIT_IMAGE_NAME)
+
+###############################################################################
+# Launch test
+
+# Check for undefined variables.
+# Make sure there is a config first, otherwise the code will hang.
+.PHONY: check
+check:
+	$(if $(CONFIG),,$(error No config provided))
+	$(if $(wildcard $(CONFIG)),,$(error File not found: $(CONFIG)))
+	$(foreach var,$(UNDEFINED),$(warning Missing environment variable $(var)))
+	$(if $(strip $(UNDEFINED)),$(error Some variables were not provided,))
+
+.PHONY: launch
+launch: push
+launch: check
+	# Export all environment variables to the launch target.
+	AGENT_IMAGE_NAME=$(AGENT_IMAGE_NAME) TOOLKIT_IMAGE_NAME=$(TOOLKIT_IMAGE_NAME) JOB_NAME=$(JOB_NAME) envsubst < $(CONFIG) > $(CONFIG).tmp \
+	&& eai job new --account $(TOOLKIT_ACCOUNT_ID) -f $(CONFIG).tmp $(JOB_ARGS) \
+	&& rm $(CONFIG).tmp \
+	&& eai job logs -f $(shell eai job ls --name $(JOB_NAME) --account $(TOOLKIT_ACCOUNT_ID) --fields id --no-header)
