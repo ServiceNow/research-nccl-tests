@@ -5,7 +5,7 @@ ENV LANG=en_US.UTF-8
 RUN apt update && \
     DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt install -y \
         build-essential \
-        openmpi-bin openmpi-common \
+        openmpi-bin openmpi-common libopenmpi-dev \
         openssh-client openssh-server \
         ca-certificates \
         supervisor \
@@ -36,8 +36,9 @@ EXPOSE 6000
 EXPOSE 8088
 COPY --chown=13011:13011 --from=registry.console.elementai.com/shared.image/sshd:base /tk /tk
 RUN chmod 0600 /tk/etc/ssh/ssh_host_rsa_key
+COPY --chown=13011:13011 ./supervisord.conf /tk/etc/supervisord.conf
 
 USER toolkit
 COPY --chown=13011:13011 . /app
 WORKDIR /app
-RUN make all
+RUN make MPI=1 MPI_HOME=/usr/lib/x86_64-linux-gnu/openmpi all
